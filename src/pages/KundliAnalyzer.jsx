@@ -13,6 +13,7 @@ import {
 } from 'firebase/firestore';
 import { app } from '../firebase'; // Make sure app is exported in firebase.js
 
+
 const GEOAPIFY_API_KEY = '43e931c41ff148aa9900f59e664578ff';
 
 const KundliAnalyzer = () => {
