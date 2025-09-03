@@ -1,0 +1,83 @@
+/* theme.css */
+
+/* Root colors */
+:root {
+    --bs-primary: #FF5722;
+    /* Sunset Orange */
+    --bs-warning: #FFC107;
+    /* Dandelion Yellow */
+    --bs-info: #FF8F00;
+    /* Amber */
+    --bs-success: #4CAF50;
+    /* Green */
+    --bs-light: #FFEBEE;
+    /* Light Pink */
+    --bs-dark: #212121;
+    /* Dark */
+}
+
+/* Body styles */
+body {
+    background-color: var(--bs-light);
+    color: var(--bs-dark);
+    font-family: 'Arial', sans-serif;
+    margin: 0;
+    padding: 0;
+    height: 100vh;
+}
+
+/* Login page styles */
+.login-wrapper {
+    background: linear-gradient(to right top, rgba(255, 230, 236, 0.6), rgba(224, 247, 250, 0.6)), url('/bg-login.jpg') no-repeat center center/cover;
+    min-height: 100vh;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    padding: 20px;
+}
+
+.login-box {
+    background: #ffffffcc;
+    backdrop-filter: blur(10px);
+    border-radius: 16px;
+    padding: 30px;
+    max-width: 360px;
+    width: 100%;
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.1);
+    animation: fadeInUp 0.6s ease-out;
+}
+
+/* Animations */
+@keyframes fadeInUp {
+    from {
+        opacity: 0;
+        transform: translateY(20px);
+    }
+
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
+/* Login button style */
+.login-btn {
+    background-color: var(--bs-primary);
+    border: none;
+    font-weight: bold;
+    transition: 0.3s ease;
+    width: 100%;
+}
+
+.login-btn:hover {
+    background-color: #c2185b;
+    transform: scale(1.03);
+}
+
+/* Responsive */
+@media (max-width: 480px) {
+    .login-box {
+        padding: 20px;
+        max-width: 100%;
+    }
+}
