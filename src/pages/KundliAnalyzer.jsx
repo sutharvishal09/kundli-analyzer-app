@@ -1,5 +1,3 @@
-// KundliAnalyzer.jsx
-
 import React, { useState, useEffect } from 'react';
 import { Modal, Button, Form, ListGroup, Collapse } from 'react-bootstrap';
 import {
@@ -11,8 +9,8 @@ import {
     doc,
     getDocs
 } from 'firebase/firestore';
-import { app } from '../firebase'; // Make sure app is exported in firebase.js
-
+import { app } from '../firebase';  // Your firebase config
+import { calculateKundli } from '../utils/kundliCalculator';  // Your kundli logic
 
 const GEOAPIFY_API_KEY = '43e931c41ff148aa9900f59e664578ff';
 
@@ -35,46 +33,48 @@ const KundliAnalyzer = () => {
     const [suggestions, setSuggestions] = useState([]);
     const [editingIndex, setEditingIndex] = useState(null);
     const [expandedChartIndex, setExpandedChartIndex] = useState(null);
+    const [kundliCharts, setKundliCharts] = useState({}); // store kundli data keyed by id
 
-    // Fetch kundlis from Firestore on load
+    // Fetch kundli entries from Firestore on component mount
     useEffect(() => {
         const fetchKundlis = async () => {
             try {
                 const snapshot = await getDocs(kundliCollection);
-                const list = snapshot.docs.map((doc) => ({ id: doc.id, ...doc.data() }));
+                const list = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
                 setKundliList(list);
-            } catch (err) {
-                console.error('Error fetching kundlis:', err);
+            } catch (error) {
+                console.error('Error fetching kundlis:', error);
             }
         };
         fetchKundlis();
     }, []);
 
-    // Fetch place suggestions from Geoapify
+    // Fetch place suggestions for autocomplete from Geoapify
     const fetchSuggestions = async (input) => {
-        if (!input) return setSuggestions([]);
+        if (!input) {
+            setSuggestions([]);
+            return;
+        }
         try {
-            const res = await fetch(
-                `https://api.geoapify.com/v1/geocode/autocomplete?text=${encodeURIComponent(
-                    input
-                )}&limit=5&apiKey=${GEOAPIFY_API_KEY}`
+            const response = await fetch(
+                `https://api.geoapify.com/v1/geocode/autocomplete?text=${encodeURIComponent(input)}&limit=5&apiKey=${GEOAPIFY_API_KEY}`
             );
-            const data = await res.json();
+            const data = await response.json();
             setSuggestions(data.features || []);
-        } catch (err) {
-            console.error('Geoapify error:', err);
+        } catch (error) {
+            console.error('Geoapify fetch error:', error);
         }
     };
 
     const handlePlaceChange = (e) => {
         const value = e.target.value;
-        setFormData((prev) => ({ ...prev, placeOfBirth: value }));
+        setFormData(prev => ({ ...prev, placeOfBirth: value }));
         fetchSuggestions(value);
     };
 
     const handleSelectSuggestion = (feature) => {
         const props = feature.properties;
-        setFormData((prev) => ({
+        setFormData(prev => ({
             ...prev,
             placeOfBirth: props.formatted || '',
             city: props.city || '',
@@ -86,9 +86,10 @@ const KundliAnalyzer = () => {
 
     const handleChange = (e) => {
         const { name, value } = e.target;
-        setFormData((prev) => ({ ...prev, [name]: value }));
+        setFormData(prev => ({ ...prev, [name]: value }));
     };
 
+    // Open modal for adding new kundli
     const openAddModal = () => {
         setFormData({
             id: '',
@@ -105,6 +106,7 @@ const KundliAnalyzer = () => {
         setShowModal(true);
     };
 
+    // Open modal for editing existing kundli
     const openEditModal = (index) => {
         setFormData(kundliList[index]);
         setEditingIndex(index);
@@ -116,13 +118,19 @@ const KundliAnalyzer = () => {
         setShowModal(false);
         setSuggestions([]);
     };
+
+    // Handle form submit: add or update Firestore record
     const handleSubmit = async (e) => {
         e.preventDefault();
 
         if (editingIndex !== null) {
-            const id = formData.id;
-            if (!id) return alert('Missing ID for update');
+            // Update existing kundli
             try {
+                const id = formData.id;
+                if (!id) {
+                    alert('Missing ID for update');
+                    return;
+                }
                 const docRef = doc(db, 'kundlis', id);
                 await updateDoc(docRef, {
                     name: formData.name,
@@ -137,11 +145,12 @@ const KundliAnalyzer = () => {
                 updatedList[editingIndex] = formData;
                 setKundliList(updatedList);
                 setShowModal(false);
-            } catch (err) {
-                console.error('Update error:', err);
-                alert('Failed to update');
+            } catch (error) {
+                console.error('Update error:', error);
+                alert('Failed to update entry');
             }
         } else {
+            // Add new kundli
             try {
                 const docRef = await addDoc(kundliCollection, {
                     name: formData.name,
@@ -154,46 +163,82 @@ const KundliAnalyzer = () => {
                 });
                 setKundliList([...kundliList, { ...formData, id: docRef.id }]);
                 setShowModal(false);
-            } catch (err) {
-                console.error('Add error:', err);
-                alert('Failed to save');
+            } catch (error) {
+                console.error('Add error:', error);
+                alert('Failed to add entry');
             }
         }
     };
 
-    const handleDelete = async (index) => {
-        const entry = kundliList[index];
-        if (!entry.id) return alert('Missing ID');
-        if (window.confirm(`Delete ${entry.name}?`)) {
+    // Delete kundli entry from Firestore and state
+    const handleDelete = async (id) => {
+        if (!id) return alert('Missing ID');
+        if (window.confirm('Are you sure you want to delete this entry?')) {
             try {
-                await deleteDoc(doc(db, 'kundlis', entry.id));
-                const updated = kundliList.filter((_, i) => i !== index);
-                setKundliList(updated);
-                if (expandedChartIndex === index) setExpandedChartIndex(null);
-            } catch (err) {
-                console.error('Delete error:', err);
-                alert('Failed to delete');
+                await deleteDoc(doc(db, 'kundlis', id));
+                setKundliList(kundliList.filter(k => k.id !== id));
+                setExpandedChartIndex(null);
+            } catch (error) {
+                console.error('Delete error:', error);
+                alert('Failed to delete entry');
             }
         }
     };
 
-    const renderChartDetails = (kundli) => (
-        <div className="p-3 mt-3 bg-light border rounded">
-            <h5>Kundli Chart for {kundli.name}</h5>
-            <p><strong>Date:</strong> {kundli.dob}</p>
-            <p><strong>Time:</strong> {kundli.time}</p>
-            <p><strong>Location:</strong> {kundli.placeOfBirth}</p>
-            <p><strong>City:</strong> {kundli.city}, <strong>State:</strong> {kundli.state}, <strong>Country:</strong> {kundli.country}</p>
-            <div className="mt-2 p-2 bg-white rounded shadow-sm">
-                <strong>Sample Calculations</strong>
-                <ul>
-                    <li>Sun Sign: ♌ (Leo)</li>
-                    <li>Moon Sign: ♋ (Cancer)</li>
-                    <li>Ascendant: ♎ (Libra)</li>
-                </ul>
+    // Generate kundli chart and save in state for rendering
+    const generateKundli = (entry) => {
+        const kundliData = calculateKundli({
+            dob: entry.dob,
+            time: entry.time,
+            city: entry.city,
+            state: entry.state,
+            country: entry.country
+        });
+        console.log('Generated Kundli Data:', kundliData);  // <--- Add this
+
+        setKundliCharts(prev => ({ ...prev, [entry.id]: kundliData }));
+    };
+
+    // Toggle chart visibility, generate if opening
+    const toggleChart = (index) => {
+        if (expandedChartIndex === index) {
+            setExpandedChartIndex(null);
+        } else {
+            generateKundli(kundliList[index]);
+            setExpandedChartIndex(index);
+        }
+    };
+    // Render kundli chart details
+    const renderChartDetails = (entry) => {
+        const kundliData = kundliCharts[entry.id];
+        return (
+            <div className="p-3 mt-3 bg-light border rounded">
+                <h5>Kundli Chart for {entry.name}</h5>
+                <p><strong>Date of Birth:</strong> {entry.dob}</p>
+                <p><strong>Time of Birth:</strong> {entry.time}</p>
+                <p><strong>Place of Birth:</strong> {entry.placeOfBirth}</p>
+                <p><strong>City:</strong> {entry.city}, <strong>State:</strong> {entry.state}, <strong>Country:</strong> {entry.country}</p>
+                <div className="mt-2 p-2 bg-white rounded shadow-sm">
+                    <strong>Calculated Info:</strong>
+                    <ul>
+                        <li>Sun Sign: {kundliData ? kundliData.sunSign : 'Loading...'}</li>
+                        <li>Moon Sign: {kundliData ? kundliData.moonSign : 'Loading...'}</li>
+                        <li>Ascendant: {kundliData ? kundliData.ascendant : 'Loading...'}</li>
+                    </ul>
+                    {kundliData && (
+                        <>
+                            <strong>Yogas:</strong>
+                            <ul>
+                                {kundliData.yogas.map((yoga, i) => (
+                                    <li key={i}>{yoga}</li>
+                                ))}
+                            </ul>
+                        </>
+                    )}
+                </div>
             </div>
-        </div>
-    );
+        );
+    };
 
     return (
         <div className="container py-4">
@@ -203,13 +248,13 @@ const KundliAnalyzer = () => {
             </div>
 
             {kundliList.length === 0 ? (
-                <div className="text-muted">No entries yet. Click "Add New" to begin.</div>
+                <p className="text-muted">No entries found. Add new kundli above.</p>
             ) : (
                 <ListGroup>
                     {kundliList.map((entry, index) => (
                         <ListGroup.Item key={entry.id} className="mb-3">
                             <div className="d-flex justify-content-between align-items-center">
-                                <div onClick={() => setExpandedChartIndex(expandedChartIndex === index ? null : index)} style={{ cursor: 'pointer' }}>
+                                <div style={{ cursor: 'pointer' }} onClick={() => toggleChart(index)}>
                                     <h5>{entry.name}</h5>
                                     <small>{entry.placeOfBirth}</small>
                                 </div>
@@ -218,14 +263,28 @@ const KundliAnalyzer = () => {
                                         variant={expandedChartIndex === index ? 'warning' : 'success'}
                                         size="sm"
                                         className="me-2"
-                                        onClick={() => setExpandedChartIndex(expandedChartIndex === index ? null : index)}
+                                        onClick={() => toggleChart(index)}
                                     >
                                         {expandedChartIndex === index ? 'Hide Chart' : 'Show Chart'}
                                     </Button>
-                                    <Button variant="outline-secondary" size="sm" onClick={() => openEditModal(index)} className="me-2">Edit</Button>
-                                    <Button variant="outline-danger" size="sm" onClick={() => handleDelete(index)}>Delete</Button>
+                                    <Button
+                                        variant="outline-secondary"
+                                        size="sm"
+                                        className="me-2"
+                                        onClick={() => openEditModal(index)}
+                                    >
+                                        Edit
+                                    </Button>
+                                    <Button
+                                        variant="outline-danger"
+                                        size="sm"
+                                        onClick={() => handleDelete(entry.id)}
+                                    >
+                                        Delete
+                                    </Button>
                                 </div>
                             </div>
+
                             <Collapse in={expandedChartIndex === index}>
                                 <div>{renderChartDetails(entry)}</div>
                             </Collapse>
@@ -234,29 +293,29 @@ const KundliAnalyzer = () => {
                 </ListGroup>
             )}
 
-            {/* Modal */}
+            {/* Modal for Add/Edit */}
             <Modal show={showModal} onHide={handleCloseModal} centered>
                 <Modal.Header closeButton>
                     <Modal.Title>{editingIndex !== null ? 'Edit Kundli' : 'Add Kundli'}</Modal.Title>
                 </Modal.Header>
                 <Modal.Body>
                     <Form onSubmit={handleSubmit} autoComplete="off">
-                        {['name', 'dob', 'time', 'placeOfBirth', 'city', 'state', 'country'].map((field, i) => (
-                            <Form.Group key={i} className="mb-3" controlId={`form${field}`}>
-                                <Form.Label>{field.replace(/([A-Z])/g, ' $1')}</Form.Label>
+                        {['name', 'dob', 'time', 'placeOfBirth', 'city', 'state', 'country'].map(field => (
+                            <Form.Group className="mb-3" controlId={`form${field}`} key={field}>
+                                <Form.Label>{field.charAt(0).toUpperCase() + field.slice(1).replace(/([A-Z])/g, ' $1')}</Form.Label>
                                 <Form.Control
                                     name={field}
+                                    type={field === 'dob' ? 'date' : field === 'time' ? 'time' : 'text'}
                                     value={formData[field]}
                                     onChange={field === 'placeOfBirth' ? handlePlaceChange : handleChange}
                                     required
-                                    type={field === 'dob' ? 'date' : field === 'time' ? 'time' : 'text'}
                                 />
                                 {field === 'placeOfBirth' && suggestions.length > 0 && (
                                     <ListGroup className="position-absolute w-100 shadow" style={{ zIndex: 1050 }}>
-                                        {suggestions.map((feature) => (
+                                        {suggestions.map(feature => (
                                             <ListGroup.Item
-                                                key={feature.properties.place_id || feature.properties.osm_id}
                                                 action
+                                                key={feature.properties.place_id || feature.properties.osm_id}
                                                 onClick={() => handleSelectSuggestion(feature)}
                                             >
                                                 {feature.properties.formatted}
